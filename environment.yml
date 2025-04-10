@@ -1,0 +1,9 @@
+name: InternEvo
+channels:
+  - conda-forge
+dependencies:
+  - mpfr=4.1
+  - python=3.10
+  - gcc=10.3
+  - gxx=10.3
+  - mpc

@@ -147,3 +147,5 @@ llm_ckpts
 events.*
 memory_trace
 RUN*/
+
+data/
