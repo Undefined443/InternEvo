@@ -1,0 +1,6 @@
+*.zst
+*.parquet
+.git/
+data/**/*.json
+data/**/*.txt
+third_party/**/build/
