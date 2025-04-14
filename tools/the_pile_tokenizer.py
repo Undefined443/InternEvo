@@ -1,84 +1,53 @@
+import warnings; warnings.filterwarnings("ignore", category=FutureWarning)  # noqa
+import os
 import argparse
 import json
 import os.path as osp
 from pathlib import Path
 
 import numpy as np
-import sentencepiece as spm
+from transformers import AutoTokenizer
 from tqdm import tqdm
+import pandas as pd
+import zstandard as zstd
+import concurrent.futures as futures
 
 
-def process(dataset_path, sp_model):
+def process(dataset_path, model):
     """Process data sample from input dataset
 
     Args:
-        dataset_path (str): Path of dataset json file.
-        sp_model (str): Path of tokenizer.
+        dataset_path (str): Path of dataset parquet file.
+        model (str): Path of tokenizer.
 
     Yields:
         tuple: dumped processed data sample and length of tokens.
     """
 
-    dataset = json.load(open(dataset_path))
-
-    for data in dataset:
-        yield tokenize(get_chat_format_data(data), sp_model)
-
-
-def get_chat_format_data(ori_data):
-    """Format original data
-
-    Args:
-        ori_data (dict): input data sample.
-
-    Returns:
-        dict: data sample with chat format.
-    """
-    input_str = ori_data["input"]
-    instruction_str = ori_data["instruction"]
-    output_str = ori_data["output"]
-    data = dict()
-    if input_str != "":
-        data["user"] = f"<|User|>:{instruction_str}\n{input_str}"
+    dataset_path = Path(dataset_path)
+    if dataset_path.is_dir():
+        parquet_files = list(dataset_path.glob("*.parquet"))
+        jsonl_zst_files = list(dataset_path.glob("*.zst"))
     else:
-        data["user"] = f"<|User|>:{instruction_str}"
-    data["bot"] = f"<|Bot|>:{output_str}"
-    return data
+        raise ValueError(f"Invalid dataset path: {dataset_path}")
+
+    return process_files(parquet_files, jsonl_zst_files, model)
 
 
-def tokenize(sample, sp_model):
+def tokenize(sample, pile_set_name, model):
     """Tokenize input dataset
 
     Args:
         sample (dict): Input data sample.
-        sp_model (str): Path of tokenizer.
+        model (str): Path of tokenizer.
 
     Returns:
         tuple: dumped processed data sample and length of tokens.
-
-    <bos> -human_ids -<eoh> -nl_id -"<|Bot|>" ass_ids<eoa>nl_id<eos>
     """
-    special_tokens_map = {"<eoh>": 103167, "<eoa>": 103166, "nl_id": 13}
-    token_ids = [sp_model.bos_id()]
-    human_s = sample["user"]
-    ass_s = sample["bot"]
-
-    human_ids = sp_model.encode(human_s) + [special_tokens_map["<eoh>"], special_tokens_map["nl_id"]]
-    human_ids_ignore = [-token_id for token_id in human_ids]
-
-    ass_template_ids = sp_model.encode("<|Bot|>:")
-    ass_template_ids_ignore = [-token_ids for token_ids in ass_template_ids]
-    ass_ids = (
-        ass_template_ids_ignore
-        + sp_model.encode(ass_s[8:])
-        + [special_tokens_map["<eoa>"], special_tokens_map["nl_id"]]
-    )
-
-    token_ids += human_ids_ignore + ass_ids
-    if len(token_ids) > 2047:
-        token_ids = token_ids[:2047]
-    token_ids += [sp_model.eos_id()]
-    line = str.encode(json.dumps({"tokens": token_ids}) + "\n")
+    token_ids = model.encode(sample)
+    if len(token_ids) > model.model_max_length:
+        token_ids = token_ids[: model.model_max_length]
+    line = str.encode(json.dumps({"tokens": token_ids, "pile_set_name": pile_set_name}) + "\n")
     return line, len(token_ids)
 
 
@@ -142,25 +111,76 @@ def dump_bin_meta_bin(samples, path, split_ratio=0.1):
     return train_tokens, valid_tokens, train_samples, valid_samples
 
 
+def process_parquet_file(pf, model, pbar=None):
+    df = pd.read_parquet(pf)
+    results = []
+    total_lines = len(df)
+
+    for row in tqdm(df.itertuples(), total=total_lines, desc=f"Processing {os.path.basename(pf)}", leave=False):
+        results.append(tokenize(row.text, model))
+
+    if pbar:
+        pbar.update(1)
+    return results
+
+
+def process_jsonl_zst_file(jsonl_zst_file, model, pbar=None):
+    results = []
+
+    with zstd.open(jsonl_zst_file, "rt") as f:
+        for line in tqdm(f, desc=f"Processing {os.path.basename(jsonl_zst_file)}", leave=False):
+            obj = json.loads(line)
+            text = obj["text"]
+            meta = obj["meta"]
+            pile_set_name = meta["pile_set_name"]
+            results.append(tokenize(text, pile_set_name, model))
+
+    if pbar:
+        pbar.update(1)
+    return results
+
+
+def process_files(parquet_files, jsonl_zst_files, model):
+    cpu_count = os.cpu_count()
+    max_workers = min(cpu_count * 2, 32)
+    all_results = []
+
+    total_files = len(parquet_files) + len(jsonl_zst_files)
+
+    with futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+
+        with tqdm(total=total_files, desc="Overall progress") as main_pbar:
+
+            parquet_futures = [executor.submit(process_parquet_file, pf, model, main_pbar) for pf in parquet_files]
+            zst_futures = [
+                executor.submit(process_jsonl_zst_file, jsonl_zst_file, model, main_pbar)
+                for jsonl_zst_file in jsonl_zst_files
+            ]
+
+            for future in futures.as_completed(parquet_futures + zst_futures):
+                results = future.result()
+                all_results.extend(results)
+
+    return all_results
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset_path", type=str, help="path of dataset json file")
     parser.add_argument("output_path", type=str, help="path of processed dataset")
-    parser.add_argument("tokenizer_path", type=str, help="path of tokenizer")
     parser.add_argument("--split_ratio", type=float, default=0.1, help="ratio for validation dataset splitting")
+    parser.add_argument("--model", type=str, default="microsoft/mpnet-base", help="Hugging Face model name")
 
     args = parser.parse_args()
-    sp_model = spm.SentencePieceProcessor(model_file=args.tokenizer_path)
+    model = AutoTokenizer.from_pretrained(args.model)
     split_ratio = args.split_ratio
     samples = []
 
-    dataset = process(args.dataset_path, sp_model)
-    for sample in tqdm(dataset):
-        samples.append(sample)
+    dataset = process(args.dataset_path, model)
 
     train_tokens, valid_tokens, train_samples, valid_samples = dump_bin_meta_bin(
-        samples, args.output_path, args.split_ratio
+        dataset, args.output_path, args.split_ratio
     )
     print(f"number of train dataset: {train_samples}, number of train dataset token: {train_tokens}")
     print(f"number of validation dataset: {valid_samples}, number of validation dataset token: {valid_tokens}")
