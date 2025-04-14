@@ -2,7 +2,6 @@ import warnings; warnings.filterwarnings("ignore", category=FutureWarning)  # no
 import os
 import argparse
 import json
-import os.path as osp
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +10,7 @@ from tqdm import tqdm
 import pandas as pd
 import zstandard as zstd
 import concurrent.futures as futures
+import psutil
 
 
 def get_files(dataset_path):
@@ -106,6 +106,13 @@ def generate_from_jsonl(jsonl_file, model, position):
             yield tokenize(obj["text"], model, obj["meta"]["pile_set_name"])
 
 
+def get_optimal_workers():
+    cpu_count = os.cpu_count()
+    memory = psutil.virtual_memory()
+    memory_based_workers = int(memory.available / (2**30))
+    return min(cpu_count * 2, memory_based_workers, 32)
+
+
 def process_files(files, model, output_path):
     generate_funcs = {
         '.parquet': generate_from_parquet,
@@ -113,8 +120,7 @@ def process_files(files, model, output_path):
         '.jsonl': generate_from_jsonl
     }
 
-    cpu_count = os.cpu_count()
-    max_workers = min(cpu_count * 2, 32)
+    max_workers = get_optimal_workers()
     output_path = Path(output_path)
     output_path.mkdir(exist_ok=True, parents=True)
     with futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
