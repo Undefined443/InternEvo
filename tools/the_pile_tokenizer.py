@@ -13,8 +13,8 @@ import zstandard as zstd
 import concurrent.futures as futures
 
 
-def process(dataset_path, model):
-    """Process data sample from input dataset
+def get_files(dataset_path):
+    """Get files from input path
 
     Args:
         dataset_path (str): Path of dataset parquet file.
@@ -25,16 +25,18 @@ def process(dataset_path, model):
     """
 
     dataset_path = Path(dataset_path)
+    files = {}
     if dataset_path.is_dir():
-        parquet_files = list(dataset_path.glob("*.parquet"))
-        jsonl_zst_files = list(dataset_path.glob("*.zst"))
+        files[".parquet"] = sorted(list(dataset_path.glob("*.parquet")))
+        files[".jsonl.zst"] = sorted(list(dataset_path.glob("*.jsonl.zst")))
+        files[".jsonl"] = sorted(list(dataset_path.glob("*.jsonl")))
     else:
         raise ValueError(f"Invalid dataset path: {dataset_path}")
 
-    return process_files(parquet_files, jsonl_zst_files, model)
+    return files
 
 
-def tokenize(sample, pile_set_name, model):
+def tokenize(sample, model, pile_set_name=None):
     """Tokenize input dataset
 
     Args:
@@ -45,142 +47,92 @@ def tokenize(sample, pile_set_name, model):
         tuple: dumped processed data sample and length of tokens.
     """
     token_ids = model.encode(sample)
-    if len(token_ids) > model.model_max_length:
-        token_ids = token_ids[: model.model_max_length]
-    line = str.encode(json.dumps({"tokens": token_ids, "pile_set_name": pile_set_name}) + "\n")
+    obj = {"tokens": token_ids}
+    if pile_set_name:
+        obj["pile_set_name"] = pile_set_name
+    line = str.encode(json.dumps(obj) + "\n")
     return line, len(token_ids)
 
 
-def dump_bin_meta_bin(samples, path, split_ratio=0.1):
+def dump_bin_meta_bin(dataset, path):
     """Dump processed dataset
 
     Args:
         samples (dict): Input data sample.
         path (str): Path for output dataset.
-        split_ratio (float): Ratio for validation dataset splitting.
-            Default to: 0.1.
-
-    Returns:
-        tuple: number of train/valid tokens of processed dataset,
-            number of train/valid samples of processed dataset.
     """
+    dir_path = Path(path)
+    bin_path = Path(path).with_suffix(".bin")
+    meta_path = Path(path).with_suffix(".bin.meta")
+    dir_path.mkdir(exist_ok=True, parents=True)
+    bin_file = open(bin_path, "wb")
 
-    train_path = osp.join(path, "train/en/")
-    valid_path = osp.join(path, "valid/en/")
-    train_dir = Path(train_path)
-    valid_dir = Path(valid_path)
-    train_dir.mkdir(exist_ok=True, parents=True)
-    valid_dir.mkdir(exist_ok=True, parents=True)
-    train_f = open(train_dir.joinpath("dataset.bin"), "wb")
-    valid_f = open(valid_dir.joinpath("dataset.bin"), "wb")
+    tokens = 0
+    last_position = 0
+    samples = 0
+    meta = []
 
-    train_tokens = 0
-    valid_tokens = 0
-    last_train_position = 0
-    last_valid_position = 0
-    train_samples = 0
-    valid_samples = 0
-    train_meta = []
-    valid_meta = []
+    for line, token_num in dataset:
+        tokens += token_num
+        bin_file.write(line)
+        meta.append((last_position, token_num))
+        last_position += len(line)
+        samples += 1
 
-    sample_length = len(samples)
-    np.random.seed(0)
-    valid_indices = np.random.choice(range(sample_length), int(sample_length * split_ratio)).tolist()
-
-    count = -1
-    for line, token_num in samples:
-        count += 1
-        if count in valid_indices:
-            valid_tokens += token_num
-            valid_f.write(line)
-            valid_meta.append((last_valid_position, token_num))
-            last_valid_position += len(line)
-            valid_samples += 1
-        else:
-            train_tokens += token_num
-            train_f.write(line)
-            train_meta.append((last_train_position, token_num))
-            last_train_position += len(line)
-            train_samples += 1
-
-    train_f.close()
-    valid_f.close()
-    np.save(open(train_dir.joinpath("dataset.bin.meta"), "wb"), train_meta)
-    np.save(open(valid_dir.joinpath("dataset.bin.meta"), "wb"), valid_meta)
-
-    return train_tokens, valid_tokens, train_samples, valid_samples
+    bin_file.close()
+    np.save(open(meta_path, "wb"), meta)
+    print(f"Wrote {samples} samples and {tokens} tokens into {bin_path}")
 
 
-def process_parquet_file(pf, model, pbar=None):
+def generate_from_parquet(pf, model, position):
     df = pd.read_parquet(pf)
-    results = []
     total_lines = len(df)
 
-    for row in tqdm(df.itertuples(), total=total_lines, desc=f"Processing {os.path.basename(pf)}", leave=False):
-        results.append(tokenize(row.text, model))
-
-    if pbar:
-        pbar.update(1)
-    return results
+    for row in tqdm(df.itertuples(), total=total_lines, desc=f"Processing {pf.name}", position=position, leave=False):
+        yield tokenize(row.text, model)
 
 
-def process_jsonl_zst_file(jsonl_zst_file, model, pbar=None):
-    results = []
-
+def generate_from_jsonl_zst(jsonl_zst_file, model, position):
     with zstd.open(jsonl_zst_file, "rt") as f:
-        for line in tqdm(f, desc=f"Processing {os.path.basename(jsonl_zst_file)}", leave=False):
+        for line in tqdm(f, desc=f"Processing {jsonl_zst_file.name}", position=position, leave=False):
             obj = json.loads(line)
-            text = obj["text"]
-            meta = obj["meta"]
-            pile_set_name = meta["pile_set_name"]
-            results.append(tokenize(text, pile_set_name, model))
-
-    if pbar:
-        pbar.update(1)
-    return results
+            yield tokenize(obj["text"], model, obj["meta"]["pile_set_name"])
 
 
-def process_files(parquet_files, jsonl_zst_files, model):
+def generate_from_jsonl(jsonl_file, model, position):
+    with open(jsonl_file, "rt") as f:
+        for line in tqdm(f, desc=f"Processing {jsonl_file.name}", position=position, leave=False):
+            obj = json.loads(line)
+            yield tokenize(obj["text"], model, obj["meta"]["pile_set_name"])
+
+
+def process_files(files, model, output_path):
+    generate_funcs = {
+        '.parquet': generate_from_parquet,
+        '.jsonl.zst': generate_from_jsonl_zst,
+        '.jsonl': generate_from_jsonl
+    }
+
     cpu_count = os.cpu_count()
     max_workers = min(cpu_count * 2, 32)
-    all_results = []
-
-    total_files = len(parquet_files) + len(jsonl_zst_files)
-
+    output_path = Path(output_path)
+    output_path.mkdir(exist_ok=True, parents=True)
     with futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-
-        with tqdm(total=total_files, desc="Overall progress") as main_pbar:
-
-            parquet_futures = [executor.submit(process_parquet_file, pf, model, main_pbar) for pf in parquet_files]
-            zst_futures = [
-                executor.submit(process_jsonl_zst_file, jsonl_zst_file, model, main_pbar)
-                for jsonl_zst_file in jsonl_zst_files
-            ]
-
-            for future in futures.as_completed(parquet_futures + zst_futures):
-                results = future.result()
-                all_results.extend(results)
-
-    return all_results
+        for file_type, file_list in files.items():
+            for position, file in enumerate(file_list):
+                dataset = generate_funcs[file_type](file, model, position)
+                output_file = output_path / file.stem
+                executor.submit(dump_bin_meta_bin, dataset, output_file)
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset_path", type=str, help="path of dataset json file")
     parser.add_argument("output_path", type=str, help="path of processed dataset")
-    parser.add_argument("--split_ratio", type=float, default=0.1, help="ratio for validation dataset splitting")
     parser.add_argument("--model", type=str, default="microsoft/mpnet-base", help="Hugging Face model name")
 
     args = parser.parse_args()
     model = AutoTokenizer.from_pretrained(args.model)
-    split_ratio = args.split_ratio
-    samples = []
 
-    dataset = process(args.dataset_path, model)
-
-    train_tokens, valid_tokens, train_samples, valid_samples = dump_bin_meta_bin(
-        dataset, args.output_path, args.split_ratio
-    )
-    print(f"number of train dataset: {train_samples}, number of train dataset token: {train_tokens}")
-    print(f"number of validation dataset: {valid_samples}, number of validation dataset token: {valid_tokens}")
+    files = get_files(args.dataset_path)
+    process_files(files, model, args.output_path)
