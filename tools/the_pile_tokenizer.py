@@ -1,19 +1,21 @@
-import warnings; warnings.filterwarnings("ignore", category=FutureWarning)  # noqa
-import os
 import argparse
-import json
+import orjson
 from pathlib import Path
+import math
 
 import numpy as np
 from transformers import AutoTokenizer
 from tqdm import tqdm
 import pandas as pd
 import zstandard as zstd
-import concurrent.futures as futures
+import concurrent.futures
 import psutil
+from typing import Generator
+
+CHUNK_SIZE = 1000
 
 
-def get_files(dataset_path):
+def get_files(dataset_path: str) -> dict:
     """Get files from input path
 
     Args:
@@ -36,7 +38,22 @@ def get_files(dataset_path):
     return files
 
 
-def tokenize(sample, model, pile_set_name=None):
+def calculate_file_lines(file_path: Path) -> int:
+    with zstd.open(file_path, "rt") as f:
+        num_of_lines = sum(1 for _ in f)
+    return num_of_lines
+
+
+def tokenize_chunk(idx: int, chunk: pd.DataFrame, model: AutoTokenizer) -> tuple:
+    texts = chunk["text"].tolist()
+    outputs = model(texts)
+    chunk["input_ids"] = outputs["input_ids"]
+    chunk["line"] = chunk.apply(lambda x: orjson.dumps({"tokens": x["input_ids"], "pile_set_name": x["pile_set_name"]}) + b"\n", axis=1)  # noqa
+    chunk["token_num"] = chunk.apply(lambda x: len(x["input_ids"]), axis=1)
+    return idx, chunk
+
+
+def tokenize_dataset(dataset: Generator[pd.DataFrame, None, None], model: AutoTokenizer, total: int) -> list:
     """Tokenize input dataset
 
     Args:
@@ -46,24 +63,54 @@ def tokenize(sample, model, pile_set_name=None):
     Returns:
         tuple: dumped processed data sample and length of tokens.
     """
-    token_ids = model.encode(sample)
-    obj = {"tokens": token_ids}
-    if pile_set_name:
-        obj["pile_set_name"] = pile_set_name
-    line = str.encode(json.dumps(obj) + "\n")
-    return line, len(token_ids)
+    tokenset = [None] * total
+    max_workers = get_optimal_workers()
+
+    batch = []
+    num_iter = 0
+    i = 0
+
+    with tqdm(total=total, desc="Tokenizing", position=1, leave=True) as pbar:
+        for chunk in dataset:
+            batch.append(chunk)
+            i += 1
+            if i % max_workers == 0:
+                futures = []
+                with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                    for j, chunk in enumerate(batch):
+                        idx = num_iter * max_workers + j
+                        futures.append(executor.submit(tokenize_chunk, idx, chunk, model))
+                    for future in concurrent.futures.as_completed(futures):
+                        idx, chunk = future.result()
+                        tokenset[idx] = chunk
+                        pbar.update(1)
+                num_iter += 1
+                batch = []
+
+        if batch:
+            futures = []
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                for j, chunk in enumerate(batch):
+                    idx = num_iter * max_workers + j
+                    futures.append(executor.submit(tokenize_chunk, idx, chunk, model))
+                for future in concurrent.futures.as_completed(futures):
+                    idx, chunk = future.result()
+                    tokenset[idx] = chunk
+                    pbar.update(1)
+
+    return tokenset
 
 
-def dump_bin_meta_bin(dataset, path):
-    """Dump processed dataset
+def dump_bin_meta_bin(tokenset: Generator[list, None, None], path: Path, total: int):
+    """Dump processed tokenset
 
     Args:
         samples (dict): Input data sample.
-        path (str): Path for output dataset.
+        path (str): Path for output tokenset.
     """
-    dir_path = Path(path)
-    bin_path = Path(path).with_suffix(".bin")
-    meta_path = Path(path).with_suffix(".bin.meta")
+    dir_path = path.parent
+    bin_path = path.with_suffix(".bin")
+    meta_path = path.with_suffix(".bin.meta")
     dir_path.mkdir(exist_ok=True, parents=True)
     bin_file = open(bin_path, "wb")
 
@@ -72,63 +119,76 @@ def dump_bin_meta_bin(dataset, path):
     samples = 0
     meta = []
 
-    for line, token_num in dataset:
-        tokens += token_num
-        bin_file.write(line)
-        meta.append((last_position, token_num))
-        last_position += len(line)
-        samples += 1
+    for idx, chunk in tqdm(enumerate(tokenset), total=len(tokenset), desc=f"Dumping to {bin_path}", position=2, leave=True):  # chunk: [(line, token_num), ...]
+        if chunk is None:
+            print(f"Empty chunk at {idx}, skipping...")
+            continue
+        for line, token_num in zip(chunk["line"], chunk["token_num"]):
+            tokens += token_num
+            meta.append((last_position, token_num))
+            last_position += len(line)
+            samples += 1
+
+        output_chunk = b"".join(line for line in chunk["line"])
+        bin_file.write(output_chunk)
 
     bin_file.close()
-    np.save(open(meta_path, "wb"), meta)
+    with open(meta_path, "wb") as f:
+        np.save(f, meta)
     print(f"Wrote {samples} samples and {tokens} tokens into {bin_path}")
 
 
-def generate_from_parquet(pf, model, position):
+def generate_from_parquet(pf: Path, model: AutoTokenizer, position: int):
     df = pd.read_parquet(pf)
     total_lines = len(df)
 
-    for row in tqdm(df.itertuples(), total=total_lines, desc=f"Processing {pf.name}", position=position, leave=False):
-        yield tokenize(row.text, model)
+    for row in tqdm(df.itertuples(), total=total_lines, desc=f"Processing {pf.name}", position=position, leave=True):
+        yield tokenize_dataset(row.text, model)
 
 
-def generate_from_jsonl_zst(jsonl_zst_file, model, position):
+def generate_from_jsonl_zst(jsonl_zst_file: Path, total: int) -> Generator[list, None, None]:  # noqa
     with zstd.open(jsonl_zst_file, "rt") as f:
-        for line in tqdm(f, desc=f"Processing {jsonl_zst_file.name}", position=position, leave=False):
-            obj = json.loads(line)
-            yield tokenize(obj["text"], model, obj["meta"]["pile_set_name"])
+        chunk = pd.DataFrame(columns=["text", "pile_set_name"])
+        for line in tqdm(f, desc=f"Extracting {jsonl_zst_file.name}", total=total, position=0, leave=True):
+            obj = orjson.loads(line)
+            text = obj["text"]
+            pile_set_name = obj["meta"]["pile_set_name"]
+            record = pd.DataFrame({"text": [text], "pile_set_name": [pile_set_name]})
+            chunk = pd.concat([chunk, record], ignore_index=True)
+
+            if len(chunk) >= CHUNK_SIZE:
+                yield chunk
+                chunk = pd.DataFrame(columns=["text", "pile_set_name"])
+        if not chunk.empty:
+            yield chunk
 
 
-def generate_from_jsonl(jsonl_file, model, position):
+def generate_from_jsonl(jsonl_file: Path, model: AutoTokenizer, position: int):
     with open(jsonl_file, "rt") as f:
-        for line in tqdm(f, desc=f"Processing {jsonl_file.name}", position=position, leave=False):
-            obj = json.loads(line)
-            yield tokenize(obj["text"], model, obj["meta"]["pile_set_name"])
+        for line in tqdm(f, desc=f"Processing {jsonl_file.name}", position=position, leave=True):
+            obj = orjson.loads(line)
+            yield tokenize_dataset(obj["text"], model, obj["meta"]["pile_set_name"])
 
 
-def get_optimal_workers():
-    cpu_count = os.cpu_count()
-    memory = psutil.virtual_memory()
-    memory_based_workers = int(memory.available / (2**30))
-    return min(cpu_count * 2, memory_based_workers, 32)
+def get_optimal_workers() -> int:
+    cpu_count = psutil.cpu_count(logical=False)
+    memory = psutil.virtual_memory().available / 2**30
+    memory_based_workers = int(memory)
+    return min(cpu_count, memory_based_workers)
 
 
-def process_files(files, model, output_path):
-    generate_funcs = {
-        '.parquet': generate_from_parquet,
-        '.jsonl.zst': generate_from_jsonl_zst,
-        '.jsonl': generate_from_jsonl
-    }
-
-    max_workers = get_optimal_workers()
+def process_files(files: dict, model: str, output_path: str):
+    generate_funcs = {".parquet": generate_from_parquet, ".jsonl.zst": generate_from_jsonl_zst, ".jsonl": generate_from_jsonl}
     output_path = Path(output_path)
     output_path.mkdir(exist_ok=True, parents=True)
-    with futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for file_type, file_list in files.items():
-            for position, file in enumerate(file_list):
-                dataset = generate_funcs[file_type](file, model, position)
-                output_file = output_path / file.stem
-                executor.submit(dump_bin_meta_bin, dataset, output_file)
+    for file_type, file_list in files.items():
+        for file_path in file_list:
+            total = calculate_file_lines(file_path)
+            dataset = generate_funcs[file_type](file_path, total)  # 生成 chunk set
+            chunk_num = math.ceil(total / CHUNK_SIZE)
+            tokenset = tokenize_dataset(dataset, model, chunk_num)  # 从 chunk set 生成 token set
+            output_file = output_path / file_path.stem
+            dump_bin_meta_bin(tokenset, output_file, total)
 
 
 if __name__ == "__main__":
@@ -138,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="microsoft/mpnet-base", help="Hugging Face model name")
 
     args = parser.parse_args()
-    model = AutoTokenizer.from_pretrained(args.model)
 
     files = get_files(args.dataset_path)
+    model = AutoTokenizer.from_pretrained(args.model)
     process_files(files, model, args.output_path)
