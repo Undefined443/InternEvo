@@ -1,102 +1,74 @@
-import os
+import shutup; shutup.please()
 import argparse
-import json
 from pathlib import Path
 
 import numpy as np
 from transformers import AutoTokenizer
 from tqdm import tqdm
-import concurrent.futures
-import psutil
 from typing import Generator
-
-CHUNK_SIZE = 100
-
-
-def get_optimal_workers() -> int:
-    cpu_count = os.cpu_count()
-    memory = psutil.virtual_memory()
-    memory_based_workers = int(memory.available / (2**30))
-    return min(cpu_count * 2, memory_based_workers, 32)
+import orjson
 
 
-def generate_chunks(file: Path, total: int) -> Generator[list, None, None]:
-    with open(file, "rt") as f:
-        chunk = ""
-        for line in tqdm(f, desc=f"Generating chunks for {file.name}", total=total):
-            if line == "<|endoftext|>\n":
-                yield chunk
-                chunk = ""
-            else:
-                chunk += line
-
-
-def tokenize_chunk(idx, chunk: str, model: AutoTokenizer) -> list:
-    output = model(chunk)
-    input_ids = output["input_ids"]
-    token_num = len(input_ids)
-    line = str.encode(json.dumps({"tokens": input_ids}) + "\n")
-    return idx, (line, token_num)
-
-
-def process_file(file: Path, model: AutoTokenizer) -> list:
-    max_workers = get_optimal_workers()
-    if not file.exists():
-        raise FileNotFoundError(f"File {file} does not exist")
+def generate_samples(file: str) -> Generator[str, None, None]:
     with open(file, "rt") as f:
         total = sum(1 for _ in f)
-    chunks = generate_chunks(file, total)
-    result = [None] * total
-    futures = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for idx, chunk in enumerate(chunks):
-            futures.append(executor.submit(tokenize_chunk, idx, chunk, model))
 
-    for future in futures:
-        idx, (line, token_num) = future.result()
-        result[idx] = (line, token_num)
-
-    return result
+    with open(file, "rt") as f:
+        sample = ""
+        for line in tqdm(f, desc=f"Generating samples for {file}", total=total):
+            if line == "<|endoftext|>\n":
+                yield sample
+                sample = ""
+            else:
+                sample += line
 
 
-def dump_bin_meta_bin(dataset: list, output_path: Path):
-    dir_path = output_path.parent
-    bin_path = output_path.with_suffix(".bin")
-    meta_path = output_path.with_suffix(".bin.meta")
-    dir_path.mkdir(exist_ok=True, parents=True)
+def tokenize_samples(samples: Generator[str, None, None], model: str) -> Generator[list, None, None]:
+    model = AutoTokenizer.from_pretrained(model)
+    for input in samples:
+        _output = model(input)
+        tokens = _output["input_ids"]
+        yield tokens
 
-    tokens = 0
+
+def dump_tokens(tokenset: Generator[list, None, None], output_path: str):
+    _output_path = Path(output_path)
+    bin_file = str(_output_path.with_suffix(".bin"))
+    meta_file = str(_output_path.with_suffix(".bin.meta"))
+    _output_dir = _output_path.parent
+    _output_dir.mkdir(exist_ok=True, parents=True)
+
+    token_num = 0
     last_position = 0
-    samples = 0
-    bin = b""
+    sample_num = 0
     meta = []
+    with open(bin_file, "wb") as f:
+        for tokens in tokenset:
+            sample_num += 1
+            token_num += len(tokens)
+            meta.append((last_position, len(tokens)))
+            line = orjson.dumps({"tokens": tokens}) + b"\n"
+            last_position += len(line)
+            f.write(line)
 
-    for line, token_num in tqdm(dataset, desc="Writing dataset", total=len(dataset)):
-        tokens += token_num
-        meta.append((last_position, token_num))
-        last_position += len(line)
-        samples += 1
-        bin += line
-
-    with open(bin_path, "wb") as f:
-        f.write(bin)
-
-    with open(meta_path, "wb") as f:
+    with open(meta_file, "wb") as f:
         np.save(f, meta)
 
-    print(f"Wrote {samples} samples and {tokens} tokens into {bin_path}")
+    print(f"Wrote {sample_num} samples, {token_num} tokens to {bin_file}")
+
+
+def process_file(input_file: str, model: str, output_dir: str):
+    samples = generate_samples(input_file)
+    tokens = tokenize_samples(samples, model)
+    output_path = str(Path(output_dir) / Path(input_file).stem)
+    dump_tokens(tokens, output_path)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset_path", type=str, help="path of dataset txt file")
-    parser.add_argument("output_path", type=str, help="path of processed dataset")
+    parser.add_argument("input_path", type=str)
+    parser.add_argument("output_path", type=str)
     parser.add_argument("--model", type=str, default="microsoft/mpnet-base", help="Hugging Face model name")
-
     args = parser.parse_args()
-    model = AutoTokenizer.from_pretrained(args.model)
 
-    file = Path(args.dataset_path)
-    output_path = Path(args.output_path)
-    dataset = process_file(file, model)
-    dump_bin_meta_bin(dataset, output_path)
+    process_file(args.input_path, args.model, args.output_path)
