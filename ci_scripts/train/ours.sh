@@ -1,0 +1,1 @@
+torchrun --nproc_per_node=1 --master_addr=::1 --master_port=12321 train.py --config configs/8B_internlm3.py --launcher torch

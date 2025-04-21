@@ -3,19 +3,19 @@ JOB_NAME = "8b_internlm3_train"
 model_type = "INTERNLM3"
 DO_ALERT = False
 
-VOCAB_SIZE = 50265  # roberta-base 的词表大小
-SEQ_LEN = 2048  # 影响上下文能力
-HIDDEN_SIZE = 2048  # 模型的主干维度。由于 Flash Attention 限制每个注意力头的维度不超过 256，因此必须满足 HIDDEN_SIZE / NUM_ATTENTION_HEAD <= 256
-NUM_ATTENTION_HEAD = 8  # 注意力头的数量。多头注意力允许模型从不同的表征空间学习特征
+VOCAB_SIZE = 50265         # roberta-base 的词表大小
+SEQ_LEN = 512              # 影响上下文能力
+HIDDEN_SIZE = 2048         # 模型的主干维度。由于 Flash Attention 限制每个注意力头的维度不超过 256，因此必须满足 HIDDEN_SIZE / NUM_ATTENTION_HEAD <= 256
+NUM_ATTENTION_HEAD = 32    # 注意力头的数量。多头注意力允许模型从不同的表征空间学习特征
 NUM_KV_ATTENTION_HEAD = 2  # 键值注意力头的数量。与查询注意力头共享参数
-MLP_RATIO = 2.5  # FFN 网络中间层的扩展比例，影响模型的非线性变化能力
-NUM_LAYER = 8  # Transformer 层的数量
+MLP_RATIO = 2.5            # FFN 网络中间层的扩展比例，影响模型的非线性变化能力
+NUM_LAYER = 32             # Transformer 层的数量
 
 
 MODEL_ONLY_FOLDER = None  # "local:llm_ckpts/xxxx"
 # Ckpt folder format:
 # fs: 'local:/mnt/nfs/XXX'
-SAVE_CKPT_FOLDER = None  # "local:llm_ckpts"
+SAVE_CKPT_FOLDER = "local:llm_ckpts/8B_internlm3"  # "local:llm_ckpts"
 # LOAD_CKPT_FOLDER = "local:llm_ckpts/49"
 
 # boto3 Ckpt folder format:
@@ -49,8 +49,10 @@ ckpt = dict(
     enable_internevo2hf_ckpt=False,
 )
 
-TRAIN_FOLDER = "data/the_pile/train/roberta"  # FIXME
-VALID_FOLDER = "data/the_pile/valid/roberta"  # FIXME
+TRAIN_FOLDER = "data/the_pile/train/roberta"
+VALID_FOLDER = "data/the_pile/valid/roberta"
+# TRAIN_FOLDER = None  # FIXME
+# VALID_FOLDER = None  # FIXME
 data = dict(
     seq_len=SEQ_LEN,
     # micro_num means the number of micro_batch contained in one gradient update
