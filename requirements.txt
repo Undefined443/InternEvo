@@ -1,4 +1,0 @@
-safetensors
-numpy<2
-einops
-transformers==4.28.1
