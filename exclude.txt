@@ -3,4 +3,5 @@
 .git/
 data/**/*.json
 data/**/*.txt
+data/pile-uncopyrighted/
 third_party/**/build/
