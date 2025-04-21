@@ -1,2 +1,6 @@
 datasets
 zstandard
+shutup
+pandas
+tqdm
+zstandard

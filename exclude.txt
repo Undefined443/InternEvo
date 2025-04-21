@@ -1,7 +1,3 @@
-*.zst
-*.parquet
 .git/
-data/**/*.json
-data/**/*.txt
-data/pile-uncopyrighted/
+data/
 third_party/**/build/
