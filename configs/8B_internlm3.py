@@ -25,7 +25,7 @@ SAVE_CKPT_FOLDER = "local:llm_ckpts/8B_internlm3"  # "local:llm_ckpts"
 # LOAD_CKPT_FOLDER = f"boto3:s3://model_weights.{BOTO3_IP}/internlm/snapshot/1/"
 CHECKPOINT_EVERY = 50
 ckpt = dict(
-    enable_save_ckpt=False,  # enable ckpt save.
+    enable_save_ckpt=True,  # enable ckpt save.
     save_ckpt_folder=SAVE_CKPT_FOLDER,  # Path to save training ckpt.
     # 'load_ckpt_info' setting guide:
     # 1. the 'path' indicate ckpt path,

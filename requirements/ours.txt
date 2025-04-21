@@ -2,5 +2,4 @@ datasets
 zstandard
 shutup
 pandas
-tqdm
-zstandard
+hf_xet
