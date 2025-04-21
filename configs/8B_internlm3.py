@@ -3,13 +3,13 @@ JOB_NAME = "8b_internlm3_train"
 model_type = "INTERNLM3"
 DO_ALERT = False
 
-VOCAB_SIZE = 128512
-SEQ_LEN = 4096
-HIDDEN_SIZE = 4096
-NUM_ATTENTION_HEAD = 32
-NUM_KV_ATTENTION_HEAD = 2
-MLP_RATIO = 2.5
-NUM_LAYER = 48
+VOCAB_SIZE = 50265  # roberta-base 的词表大小
+SEQ_LEN = 2048  # 影响上下文能力
+HIDDEN_SIZE = 2048  # 模型的主干维度。由于 Flash Attention 限制每个注意力头的维度不超过 256，因此必须满足 HIDDEN_SIZE / NUM_ATTENTION_HEAD <= 256
+NUM_ATTENTION_HEAD = 8  # 注意力头的数量。多头注意力允许模型从不同的表征空间学习特征
+NUM_KV_ATTENTION_HEAD = 2  # 键值注意力头的数量。与查询注意力头共享参数
+MLP_RATIO = 2.5  # FFN 网络中间层的扩展比例，影响模型的非线性变化能力
+NUM_LAYER = 8  # Transformer 层的数量
 
 
 MODEL_ONLY_FOLDER = None  # "local:llm_ckpts/xxxx"
@@ -49,8 +49,8 @@ ckpt = dict(
     enable_internevo2hf_ckpt=False,
 )
 
-TRAIN_FOLDER = None
-VALID_FOLDER = None  # "/path/to/dataset"
+TRAIN_FOLDER = "data/the_pile/train/roberta"  # FIXME
+VALID_FOLDER = "data/the_pile/valid/roberta"  # FIXME
 data = dict(
     seq_len=SEQ_LEN,
     # micro_num means the number of micro_batch contained in one gradient update
@@ -224,7 +224,7 @@ parallel = dict(
     zero1=dict(size=1),
     tensor=dict(size=1, mode="isp"),
     pipeline=dict(size=1, interleaved_overlap=True),
-    weight=dict(size=16, overlap=True, launch_allgather_before="wo", forward_overlap_per="module"),
+    weight=dict(size=1, overlap=True, launch_allgather_before="wo", forward_overlap_per="module"),
     sequence_2D=dict(
         enable=False,
         head_size=2,
