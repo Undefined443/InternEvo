@@ -1,8 +1,8 @@
-JOB_NAME = "7b_internlm2_train"
+JOB_NAME = "7b_internlm2_roberta"
 model_type = "INTERNLM2"
 DO_ALERT = False
 
-VOCAB_SIZE = 92544
+VOCAB_SIZE = 50265
 SEQ_LEN = 512
 HIDDEN_SIZE = 2048
 NUM_ATTENTION_HEAD = 32
@@ -11,11 +11,11 @@ MLP_RATIO = 3.5
 NUM_LAYER = 32
 
 
-MODEL_ONLY_FOLDER = "local:llm_ckpts/7B_internlm2/xxxx"
+MODEL_ONLY_FOLDER = "local:llm_ckpts/7B_internlm2_roberta/xxxx"
 # Ckpt folder format:
 # fs: 'local:/mnt/nfs/XXX'
-SAVE_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2"
-LOAD_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2/49"
+SAVE_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2_roberta"
+LOAD_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2_roberta/49"
 
 # boto3 Ckpt folder format:
 # import os
@@ -218,8 +218,8 @@ monitor = dict(
 # metric_dtype = "fp32"
 
 generation = dict(
-    ckpt_folder="llm_ckpts/7B_internlm2",
-    output_folder="llm_ckpts/7B_internlm2/generation",
+    ckpt_folder="llm_ckpts/7B_internlm2_roberta",
+    output_folder="llm_ckpts/7B_internlm2_roberta/generation",
     batch_size=1,
     eos_id=[2, 0],
     bos_id=1,
