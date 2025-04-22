@@ -3,28 +3,28 @@ model_type = "INTERNLM2"
 DO_ALERT = False
 
 VOCAB_SIZE = 92544
-SEQ_LEN = 2048
-HIDDEN_SIZE = 4096
+SEQ_LEN = 512
+HIDDEN_SIZE = 2048
 NUM_ATTENTION_HEAD = 32
 NUM_KV_ATTENTION_HEAD = 8
 MLP_RATIO = 3.5
 NUM_LAYER = 32
 
 
-MODEL_ONLY_FOLDER = "local:llm_ckpts/xxxx"
+MODEL_ONLY_FOLDER = "local:llm_ckpts/7B_internlm2/xxxx"
 # Ckpt folder format:
 # fs: 'local:/mnt/nfs/XXX'
-SAVE_CKPT_FOLDER = "local:llm_ckpts"
-LOAD_CKPT_FOLDER = "local:llm_ckpts/49"
+SAVE_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2"
+LOAD_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2/49"
 
 # boto3 Ckpt folder format:
 # import os
 # BOTO3_IP = os.environ["BOTO3_IP"] # boto3 bucket endpoint
 # SAVE_CKPT_FOLDER = f"boto3:s3://model_weights.{BOTO3_IP}/internlm"
 # LOAD_CKPT_FOLDER = f"boto3:s3://model_weights.{BOTO3_IP}/internlm/snapshot/1/"
-CHECKPOINT_EVERY = 50
+CHECKPOINT_EVERY = 10000
 ckpt = dict(
-    enable_save_ckpt=False,  # enable ckpt save.
+    enable_save_ckpt=True,  # enable ckpt save.
     save_ckpt_folder=SAVE_CKPT_FOLDER,  # Path to save training ckpt.
     # 'auto_resume' is designed to automatically load the latest checkpoint from 'save_ckpt_folder' when encountering
     # training interruptions/hangs caused by hardware failures, using a scheduling system (such as k8s/slurm)
@@ -35,13 +35,13 @@ ckpt = dict(
     # If you want to train from scratch, please set `auto_resume` to False and 'load_ckpt_info' to None.
     auto_resume=False,
     checkpoint_every=CHECKPOINT_EVERY,
-    async_upload=True,  # async ckpt upload. (only work for boto3 ckpt)
+    async_upload=False,  # async ckpt upload. (only work for boto3 ckpt)
     async_upload_tmp_folder="/dev/shm/internlm_tmp_ckpt/",  # path for temporarily files during asynchronous upload.
     oss_snapshot_freq=int(CHECKPOINT_EVERY / 2),  # snapshot ckpt save frequency.
 )
 
-TRAIN_FOLDER = None
-VALID_FOLDER = None  # "/path/to/dataset"
+TRAIN_FOLDER = "data/the_pile/train/roberta"
+VALID_FOLDER = "data/the_pile/valid/roberta"
 data = dict(
     seq_len=SEQ_LEN,
     # micro_num means the number of micro_batch contained in one gradient update
@@ -53,7 +53,7 @@ data = dict(
     # defaults to 0, means disable evaluate
     valid_every=0,
     pack_sample_into_one=False,
-    total_steps=20000,
+    total_steps=200000,
     skip_batches="",
     # rampup_batch_size (str): A string with three space-separated integers representing the
     #       starting batch size, the increment, and the number of steps between
@@ -192,9 +192,9 @@ weight parallel (dict):
 """
 parallel = dict(
     zero1=dict(size=-1),
-    tensor=dict(size=2, mode="isp"),
+    tensor=dict(size=1, mode="isp"),
     pipeline=dict(size=1, interleaved_overlap=True, mode="1f1b"),
-    weight=dict(size=2, overlap=True),
+    weight=dict(size=1, overlap=True),
 )
 
 cudnn_deterministic = False
@@ -218,8 +218,8 @@ monitor = dict(
 # metric_dtype = "fp32"
 
 generation = dict(
-    ckpt_folder="/path/to/saved/ckpt",
-    output_folder="/path/to/save/generation",
+    ckpt_folder="llm_ckpts/7B_internlm2",
+    output_folder="llm_ckpts/7B_internlm2/generation",
     batch_size=1,
     eos_id=[2, 0],
     bos_id=1,
