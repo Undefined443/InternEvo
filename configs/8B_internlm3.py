@@ -23,7 +23,8 @@ SAVE_CKPT_FOLDER = "local:llm_ckpts/8B_internlm3"  # "local:llm_ckpts"
 # BOTO3_IP = os.environ["BOTO3_IP"] # boto3 bucket endpoint
 # SAVE_CKPT_FOLDER = f"boto3:s3://model_weights.{BOTO3_IP}/internlm"
 # LOAD_CKPT_FOLDER = f"boto3:s3://model_weights.{BOTO3_IP}/internlm/snapshot/1/"
-CHECKPOINT_EVERY = 1000
+CHECKPOINT_EVERY = 10000
+TOTAL_STEPS=2000000
 ckpt = dict(
     enable_save_ckpt=True,  # enable ckpt save.
     save_ckpt_folder=SAVE_CKPT_FOLDER,  # Path to save training ckpt.
@@ -42,11 +43,11 @@ ckpt = dict(
     # If you want to train from scratch, please set `auto_resume` to False and 'load_ckpt_info' to None.
     auto_resume=False,
     checkpoint_every=CHECKPOINT_EVERY,
-    async_upload=True,  # async ckpt upload. (only work for boto3 ckpt)
+    async_upload=False,  # async ckpt upload. (only work for boto3 ckpt)
     async_upload_tmp_folder="/dev/shm/internlm_tmp_ckpt/",  # path for temporarily files during asynchronous upload.
     oss_snapshot_freq=int(CHECKPOINT_EVERY / 2),  # snapshot ckpt save frequency.
     # 'enable_internevo2hf_ckpt' is designed to convert the saved model checkpoint in internevo format to the huggingface format.
-    enable_internevo2hf_ckpt=False,
+    enable_internevo2hf_ckpt=True,
 )
 
 TRAIN_FOLDER = "data/the_pile/train/roberta"
@@ -64,7 +65,7 @@ data = dict(
     # defaults to 0, means disable evaluate
     valid_every=0,
     pack_sample_into_one=False,
-    total_steps=20000,
+    total_steps=TOTAL_STEPS,
     skip_batches="",
     # rampup_batch_size (str): A string with three space-separated integers representing the
     #       starting batch size, the increment, and the number of steps between
