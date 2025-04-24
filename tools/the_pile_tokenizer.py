@@ -1,6 +1,4 @@
-import shutup
-
-shutup.please()
+import shutup; shutup.please()
 import argparse
 import orjson
 from pathlib import Path
@@ -45,11 +43,19 @@ def generate_samples(lines: Generator[dict, None, None]) -> Generator[dict, None
         yield line
 
 
-def tokenize_samples(inputs: Generator[dict, None, None], model: str) -> Generator[dict, None, None]:
-    model = AutoTokenizer.from_pretrained(model)
+def tokenize_samples(inputs: Generator[dict, None, None], tokenizer_name: str) -> Generator[dict, None, None]:
+    if tokenizer_name == "internlm":
+        import sys
+        current_dir = Path(__file__).parent
+        model_path = str(current_dir / "tokenizer_internlm.model")
+        sys.path.append(str(current_dir / "../transformers"))
+        from internlm_model import InternLMTokenizer  # noqa: E402 # pylint: disable=C0413
+        tokenizer = InternLMTokenizer(vocab_file=model_path, add_bos_token=True, add_eos_token=True)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     for input in inputs:
         _text = input["text"]
-        _output = model(_text)
+        _output = tokenizer(_text)
         tokens = _output["input_ids"]
         pile_set_name = input["pile_set_name"]
         output = {"tokens": tokens, "pile_set_name": pile_set_name}
@@ -99,7 +105,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("input_file", type=str)
     parser.add_argument("output_dir", type=str)
-    parser.add_argument("--model", type=str, default="microsoft/mpnet-base", help="Hugging Face model name")
+    parser.add_argument("--tokenizer", type=str, default="internlm")
     args = parser.parse_args()
 
-    process_file(args.input_file, args.model, args.output_dir)
+    process_file(args.input_file, args.tokenizer, args.output_dir)

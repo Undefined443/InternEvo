@@ -1,3 +1,4 @@
+import warnings; warnings.filterwarnings("ignore", category=FutureWarning)  # noqa
 import argparse
 import json
 import os
@@ -5,7 +6,6 @@ import os
 
 import numpy as np
 from transformers import AutoTokenizer
-import warnings; warnings.filterwarnings("ignore", category=FutureWarning)  # noqa
 
 # current_dir = os.path.dirname(os.path.abspath(__file__))
 # model_path = os.path.join(current_dir, "tokenizer_internlm.model")
