@@ -823,7 +823,7 @@ class LocalClient(StorageClient):
         # Handle safetensors
         if fp.endswith(".safetensors"):
             return save_file(saved_obj, fp, **kwargs)
-        torch.save(saved_obj, fp, **kwargs)
+        torch.save(saved_obj, fp, **kwargs, pickle_protocol=4)
 
     @staticmethod
     def load(load_path: str, **kwargs):
