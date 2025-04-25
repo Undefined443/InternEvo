@@ -257,7 +257,7 @@ class TrainerBuilder(Trainer):
         self.beta2_scheduler = beta2_scheduler
         self.isp_communicator = isp_communicator
 
-    def fit(self):
+    def fit(self, **kwargs):
         """
         Run InternEvo training loop.
         """
@@ -267,12 +267,12 @@ class TrainerBuilder(Trainer):
         with initialize_llm_profile(profiling=self.profiling, start_time=self.current_time) as prof:
             gc.disable()
             for batch_count in range(self.train_state.batch_count, gpc.config.data.total_steps):
-                if self._process_batch(batch_count, train_iter, prof):
+                if self._process_batch(batch_count, train_iter, prof, **kwargs):
                     break
 
         self.ckpt_manager.wait_async_upload_finish()
 
-    def _process_batch(self, batch_count: int, train_iter, prof) -> bool:
+    def _process_batch(self, batch_count: int, train_iter, prof, **kwargs) -> bool:
         empty_cache_and_diag(batch_count, interval=gpc.config.data.empty_cache_and_diag_interval)
         start_time = time.time()
         timer("one-batch").start()
@@ -285,7 +285,7 @@ class TrainerBuilder(Trainer):
             return False
 
         timer("fwd-bwd").start()
-        loss, moe_loss = self._forward_backward(batch)
+        loss, moe_loss = self._forward_backward(batch, **kwargs)
         timer("fwd-bwd").stop()
 
         success_update, grad_norm_groups = self._update_parameters()
@@ -309,14 +309,14 @@ class TrainerBuilder(Trainer):
             self.metric.set_current_type_ids(type_ids=batch[0].pop("type_ids", None))
         return batch, train_iter
 
-    def _forward_backward(self, batch):
+    def _forward_backward(self, batch, **kwargs):
         self.zero_grad()
         if hasattr(gpc.config.model, "num_experts"):
             _, _, loss, moe_loss = self.execute_schedule(
                 batch, forward_only=False, return_loss=True, return_output_label=False
             )
         else:
-            _, _, loss = self.execute_schedule(batch, forward_only=False, return_loss=True, return_output_label=False)
+            _, _, loss = self.execute_schedule(batch, forward_only=False, return_loss=True, return_output_label=False, **kwargs)
             moe_loss = None
         return loss, moe_loss
 

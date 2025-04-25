@@ -39,6 +39,7 @@ from transformers.modeling_utils import (
     SAFE_WEIGHTS_NAME,
     shard_checkpoint,
 )
+from transformers import AutoModel
 
 internlm_accelerator = get_accelerator()
 logger = get_logger(__file__)
@@ -409,6 +410,9 @@ class InternLM2(BaseModel):
                 else:
                     uniform_(std=embedding_init_std)(param)
 
+            self.cls_proj = nn.Linear(768, hidden_size, bias=False, dtype=torch.float32)
+            setattr(self.cls_proj, "is_fp32_module", True)
+
         self.layers = nn.ModuleList(
             [
                 InternLM2Decoder(
@@ -469,10 +473,19 @@ class InternLM2(BaseModel):
                 else:
                     uniform_(std=out_head_init_std)(param)
 
-    def forward(self, hidden_states=None, input_ids=None, **kwargs):
+    def forward(self, hidden_states=None, input_ids=None, encoder=None, **kwargs):
         # attention_mask: compute attention on the places where the value is 1
         if hasattr(self, "tok_embeddings") and input_ids is not None:
-            hidden_states = self.tok_embeddings(input_ids)
+            # 修改 embeddings
+            with torch.no_grad():
+                _input_ids = input_ids[:, :-1]
+                features = encoder(_input_ids).last_hidden_state
+                cls = features[:, 0, :]
+                cls = self.cls_proj(cls)
+                cls = cls.unsqueeze(0)
+
+            _hidden_states = self.tok_embeddings(_input_ids)
+            hidden_states = torch.cat([cls, _hidden_states], dim=1)
             if self.embed_grad_scale != 1:
                 hidden_states = (
                     self.embed_grad_scale * hidden_states + (1 - self.embed_grad_scale) * hidden_states.detach()

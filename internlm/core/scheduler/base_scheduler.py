@@ -88,7 +88,7 @@ class BaseScheduler(ABC):
         pass
 
     @staticmethod
-    def _call_engine(engine: Engine, inputs: Any):
+    def _call_engine(engine: Engine, inputs: Any, **kwargs):
         """Calls the engine with the given inputs.
 
         Args:
@@ -100,7 +100,7 @@ class BaseScheduler(ABC):
         elif isinstance(inputs, (list, tuple)):
             return engine(*inputs)
         elif isinstance(inputs, dict):
-            return engine(**inputs)
+            return engine(**inputs, **kwargs)
         else:
             raise TypeError(
                 f"Expected engine inputs to be of type torch.Tensor, list, tuple, or dict, but got {type(inputs)}"

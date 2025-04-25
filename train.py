@@ -12,6 +12,7 @@ from internlm.initialize import initialize_distributed_env
 from internlm.model.builder import create_model
 from internlm.monitor import internevo_monitor
 from internlm.utils.common import parse_args
+from transformers import AutoModel
 
 
 @internevo_monitor(feishu_alert=True, clean_run=True)
@@ -29,8 +30,13 @@ def main(args):
     merged_args = {**vars(args), "dataset_types": dataset_types}
     trainer = TrainerBuilder(model, train_dl, val_dls, **merged_args)
 
+    # create encoder
+    encoder = AutoModel.from_pretrained("FacebookAI/roberta-base")
+    encoder = encoder.cuda()
+    encoder.eval()
+
     # training
-    trainer.fit()
+    trainer.fit(encoder=encoder)
 
 
 if __name__ == "__main__":

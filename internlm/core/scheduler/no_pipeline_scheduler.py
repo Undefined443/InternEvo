@@ -98,6 +98,7 @@ class NonPipelineScheduler(BaseScheduler):
         return_loss: bool = True,
         return_output: bool = False,
         scale_loss: int = 1,
+        **kwargs,
     ):
         """Trains one batch of data.
 
@@ -119,9 +120,13 @@ class NonPipelineScheduler(BaseScheduler):
                 # moe is used
                 output, moe_losses = self._call_engine(engine, data)
             else:
-                output = self._call_engine(engine, data)
+                output = self._call_engine(engine, data, **kwargs)
             self._call_hooks("after_forward", output)
-
+            with torch.no_grad():
+                _label = label.clone()
+                _label[:, 0] = -100
+                _label[:, 1:] = label[:, :-1]
+                label = _label
             self._call_hooks("post_helper_func", output, label)
 
             if return_loss:
@@ -169,6 +174,7 @@ class NonPipelineScheduler(BaseScheduler):
         forward_only: bool = False,
         return_loss: bool = True,
         return_output_label: bool = True,
+        **kwargs,
     ):
         """The process function that loads a batch of dataset and feeds it to the model.
         The returned labels and loss will None if :attr:`return_loss` is False.
@@ -219,7 +225,7 @@ class NonPipelineScheduler(BaseScheduler):
             _data, _label = self._load_accum_batch(data, label)
 
             _output, _loss, _moe_loss = self._train_one_batch(
-                _data, _label, engine, forward_only, return_loss, return_output_label, self._grad_accum_size
+                _data, _label, engine, forward_only, return_loss, return_output_label, self._grad_accum_size, **kwargs
             )
 
             if return_loss:
