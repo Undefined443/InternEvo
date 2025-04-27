@@ -25,7 +25,7 @@ from internlm.utils.utils import DataType, ModelType, TensorParallelMode
 try:
     import numa
     from numa import memory, schedule
-    from pynvml.smi import nvidia_smi
+    from pynvml_utils import nvidia_smi
 except (AttributeError, ImportError):
     get_numa = False
 else:
