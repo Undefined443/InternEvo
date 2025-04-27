@@ -1,4 +1,4 @@
-JOB_NAME = "7b_internlm2_train"
+JOB_NAME = "7B_internlm2_roberta"
 model_type = "INTERNLM2"
 DO_ALERT = False
 
@@ -191,8 +191,8 @@ weight parallel (dict):
     2. overlap: bool, enable/disable all_gather/reduce_scatter communication overlap, defaults to False.
 """
 parallel = dict(
-    zero1=dict(size=-1),
-    tensor=dict(size=1, mode="isp"),
+    zero1=dict(size=1),
+    tensor=dict(size=1),
     pipeline=dict(size=1, interleaved_overlap=True, mode="1f1b"),
     weight=dict(size=1, overlap=True),
 )
