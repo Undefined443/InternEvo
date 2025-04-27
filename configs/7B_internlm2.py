@@ -192,7 +192,7 @@ weight parallel (dict):
 """
 parallel = dict(
     zero1=dict(size=1),
-    tensor=dict(size=1),
+    tensor=dict(size=1, mode="mtp"),
     pipeline=dict(size=1, interleaved_overlap=True, mode="1f1b"),
     weight=dict(size=1, overlap=True),
 )
@@ -218,8 +218,8 @@ monitor = dict(
 # metric_dtype = "fp32"
 
 generation = dict(
-    ckpt_folder="llm_ckpts/7B_internlm2",
-    output_folder="llm_ckpts/7B_internlm2/generation",
+    ckpt_folder="llm_ckpts/7B_internlm2_roberta/10000",
+    output_folder="generation/7B_internlm2_roberta/10000",
     batch_size=1,
     eos_id=[2, 0],
     bos_id=1,
