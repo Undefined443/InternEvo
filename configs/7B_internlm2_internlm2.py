@@ -1,4 +1,4 @@
-JOB_NAME = "7B_internlm2_internlm"
+JOB_NAME = "7B_internlm2_internlm2"
 model_type = "INTERNLM2"
 DO_ALERT = False
 
@@ -11,11 +11,11 @@ MLP_RATIO = 3.5
 NUM_LAYER = 32
 
 
-MODEL_ONLY_FOLDER = "local:llm_ckpts/7B_internlm2_internlm/xxxx"
+MODEL_ONLY_FOLDER = "local:llm_ckpts/7B_internlm2_internlm2/xxxx"
 # Ckpt folder format:
 # fs: 'local:/mnt/nfs/XXX'
-SAVE_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2_internlm"
-LOAD_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2_internlm/49"
+SAVE_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2_internlm2"
+LOAD_CKPT_FOLDER = "local:llm_ckpts/7B_internlm2_internlm2/49"
 
 # boto3 Ckpt folder format:
 # import os
@@ -40,8 +40,8 @@ ckpt = dict(
     oss_snapshot_freq=int(CHECKPOINT_EVERY / 2),  # snapshot ckpt save frequency.
 )
 
-TRAIN_FOLDER = "data/the_pile/train/internlm"
-VALID_FOLDER = "data/the_pile/valid/internlm"
+TRAIN_FOLDER = "data/the_pile/train/internlm2"
+VALID_FOLDER = "data/the_pile/valid/internlm2"
 data = dict(
     seq_len=SEQ_LEN,
     # micro_num means the number of micro_batch contained in one gradient update
@@ -218,8 +218,8 @@ monitor = dict(
 # metric_dtype = "fp32"
 
 generation = dict(
-    ckpt_folder="llm_ckpts/7B_internlm2_internlm/100",
-    output_folder="generation/7B_internlm2_internlm/100",
+    ckpt_folder="llm_ckpts/7B_internlm2_internlm2/100",
+    output_folder="generation/7B_internlm2_internlm2/100",
     batch_size=1,
     eos_id=[2, 0],
     bos_id=1,
