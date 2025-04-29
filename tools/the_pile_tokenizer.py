@@ -44,13 +44,13 @@ def generate_samples(lines: Generator[dict, None, None]) -> Generator[dict, None
 
 
 def tokenize_samples(inputs: Generator[dict, None, None], tokenizer_name: str) -> Generator[dict, None, None]:
-    if tokenizer_name == "internlm":
+    if Path(tokenizer_name).exists():
         import sys
         current_dir = Path(__file__).parent
-        model_path = str(current_dir / "tokenizer_internlm.model")
+        vocab_file = tokenizer_name
         sys.path.append(str(current_dir / "../transformers"))
         from internlm_model import InternLMTokenizer  # noqa: E402 # pylint: disable=C0413
-        tokenizer = InternLMTokenizer(vocab_file=model_path, add_bos_token=True, add_eos_token=True)
+        tokenizer = InternLMTokenizer(vocab_file=vocab_file, add_bos_token=True, add_eos_token=True)
     else:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     for input in inputs:
@@ -90,14 +90,14 @@ def dump_outputs(outputs: Generator[list, None, None], output_path: str):
     print(f"Wrote {sample_num} samples, {token_num} tokens to {bin_file}")
 
 
-def process_file(input_file: str, model: str, output_dir: str):
+def process_file(input_file: str, tokenizer: str, output_dir: str):
     _input_file = Path(input_file)
     _output_dir = Path(output_dir)
     _output_dir.mkdir(exist_ok=True, parents=True)
     output_path = str(_output_dir / _input_file.stem)
     lines = generate_lines(input_file)
     samples = generate_samples(lines)
-    outputs = tokenize_samples(samples, model)
+    outputs = tokenize_samples(samples, tokenizer)
     dump_outputs(outputs, output_path)
 
 
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("input_file", type=str)
     parser.add_argument("output_dir", type=str)
-    parser.add_argument("--tokenizer", type=str, default="internlm")
+    parser.add_argument("--tokenizer", type=str, default="tools/tokenizer_internlm2.model")
     args = parser.parse_args()
 
     process_file(args.input_file, args.tokenizer, args.output_dir)

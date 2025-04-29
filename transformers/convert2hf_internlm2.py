@@ -8,6 +8,7 @@ python transformers/convert2hf_internlm2.py --src /path/to/src --tgt /path/to/tg
        --rotary_type origin
 ```
 """
+import shutup; shutup.please()
 import argparse
 import gc
 import json
@@ -26,6 +27,7 @@ from internlm2_model import (
 from tqdm import tqdm
 
 from transformers.modeling_utils import no_init_weights
+from transformers import AutoTokenizer
 
 sys.path.insert(0, os.getcwd())
 
@@ -265,7 +267,10 @@ def convert(src, tgt, tokenizer, dtype, max_shard_size, max_pos, rope_scaling):
 
     # initialize model
     # tokenizer
-    tokenizer = InternLM2TokenizerFast(tokenizer)
+    if os.path.isfile(tokenizer):
+        tokenizer = InternLM2TokenizerFast(tokenizer)  # BUG 用时超长
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer)
     # config
     config = InternLM2Config(
         vocab_size=model_config["vocab_size"],
