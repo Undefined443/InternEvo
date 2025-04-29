@@ -1,19 +1,16 @@
-import warnings; warnings.filterwarnings("ignore", category=FutureWarning)  # noqa
 import argparse
 import json
 import os
-# import sys
+import sys
 
 import numpy as np
-from transformers import AutoTokenizer
 
-# current_dir = os.path.dirname(os.path.abspath(__file__))
-# model_path = os.path.join(current_dir, "tokenizer_internlm.model")
-# sys.path.append(os.path.join(current_dir, "../transformers"))
-# from internlm_model import InternLMTokenizer  # noqa: E402 # pylint: disable=C0413
+current_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(current_dir, "tokenizer_internlm.model")
+sys.path.append(os.path.join(current_dir, "../transformers"))
+from internlm_model import InternLMTokenizer  # noqa: E402 # pylint: disable=C0413
 
-# tokenizer = InternLMTokenizer(vocab_file=model_path, add_bos_token=True, add_eos_token=True)
-tokenizer = AutoTokenizer.from_pretrained("microsoft/mpnet-base")
+tokenizer = InternLMTokenizer(vocab_file=model_path, add_bos_token=True, add_eos_token=True)
 
 
 def write_bin(context: str, bin_file) -> None:
@@ -30,7 +27,6 @@ def write_bin(context: str, bin_file) -> None:
     >>> {"tokens": [67577, 69095, 63010, 61770, 67783, 69301, 74732]}
     """
     # encode the context into tokens, which is a list, eg. [67577, 69095, 63010, 61770, 67783, 69301, 74732]
-    context = context[:tokenizer.model_max_length]
     tokens = tokenizer.encode(context)
     # transfer the list into dic, key is str 'tokens', value is tokens.
     # eg. {"tokens": [67577, 69095, 63010, 61770, 67783, 69301, 74732]}
