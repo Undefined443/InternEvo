@@ -1,5 +1,5 @@
 JOB_NAME = "7B_internlm2_internlm"
-model_type = "INTERNLM2"
+model_type = "INTERNLM"
 DO_ALERT = False
 
 VOCAB_SIZE = 103168
