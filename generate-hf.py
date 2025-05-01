@@ -1,9 +1,10 @@
+import torch as th
 from argparse import ArgumentParser
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer
 
 
 def main(model_path, prompt):
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_path, trust_remote_code=True, torch_dtype=th.float16, attn_implementation="flash_attention_2").cuda()
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     inputs = tokenizer(prompt, return_tensors="pt")
