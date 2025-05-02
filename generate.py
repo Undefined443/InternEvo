@@ -188,7 +188,7 @@ def main():
                 for output in output_ids:
                     not_pad_indices = torch.nonzero(output != generation_config.pad_id)
                     if not_pad_indices.nelement() != 0:
-                        sequence = output[not_pad_indices[0] :]
+                        sequence = output[not_pad_indices[:,0]]
                     else:
                         sequence = output
                     sequence = sequence.tolist()
