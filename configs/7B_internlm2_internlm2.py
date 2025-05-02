@@ -224,8 +224,8 @@ monitor = dict(
 # metric_dtype = "fp32"
 
 generation = dict(
-    ckpt_folder="llm_ckpts/7B_internlm2_internlm2/100",
-    output_folder="generation/7B_internlm2_internlm2/100",
+    ckpt_folder="llm_ckpts/7B_internlm2_internlm2/120000",
+    output_folder="generation/7B_internlm2_internlm2/120000",
     batch_size=1,
     eos_id=[2, 0],
     bos_id=1,
