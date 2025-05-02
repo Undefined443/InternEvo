@@ -590,8 +590,8 @@ class GQA(nn.Module):
                 )
             else:
                 empties = attention_mask[..., -1].sum(dim=-1)
-                indexes4q = sequence_len_offset * torch.ones(q.size(0), dtype=torch.int, device=q.device) - empties
-                indexes4k = sequence_len_offset * torch.ones(k.size(0), dtype=torch.int, device=k.device) - empties
+                indexes4q = torch.ones(q.size(0), dtype=torch.int, device=q.device).expand(sequence_len_offset) - empties
+                indexes4k = torch.ones(k.size(0), dtype=torch.int, device=k.device).expand(sequence_len_offset) - empties
                 # TODO To fit flash_attn apis, we rearrange q&k to pack them here and
                 # calculate rope for this batch input. Waiting to be optimized
                 q = rearrange(q, "b s h d -> s b h d", d=self.head_dim)  # pack input
