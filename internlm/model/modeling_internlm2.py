@@ -477,15 +477,22 @@ class InternLM2(BaseModel):
         # attention_mask: compute attention on the places where the value is 1
         if hasattr(self, "tok_embeddings") and input_ids is not None:
             # 修改 embeddings
-            with torch.no_grad():
+            if not "inference_params" in kwargs:
                 _input_ids = input_ids[:, :-1]
                 features = encoder(_input_ids).last_hidden_state
                 cls = features[:, 0, :]
                 cls = self.cls_proj(cls)
                 cls = cls.unsqueeze(0)
 
-            _hidden_states = self.tok_embeddings(_input_ids)
-            hidden_states = torch.cat([cls, _hidden_states], dim=1)
+                _hidden_states = self.tok_embeddings(_input_ids)
+                hidden_states = torch.cat([cls, _hidden_states], dim=1)
+            else:
+                _input_ids = input_ids[:, :-1]
+                cls = torch.zeros(_input_ids.shape[0], 1, self.hidden_size)
+
+                _hidden_states = self.tok_embeddings(_input_ids)
+                hidden_states = torch.cat([cls, _hidden_states], dim=1)
+
             if self.embed_grad_scale != 1:
                 hidden_states = (
                     self.embed_grad_scale * hidden_states + (1 - self.embed_grad_scale) * hidden_states.detach()
